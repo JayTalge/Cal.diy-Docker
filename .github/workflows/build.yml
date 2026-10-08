@@ -125,12 +125,13 @@ jobs:
             -e NEXTAUTH_SECRET=smoke -e CALENDSO_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef \
             caldiy:smoke
           for i in $(seq 1 90); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/auth/login || true)
+            # without users /auth/login redirects (307) to the first-admin setup page
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/auth/setup || true)
             [ "$code" = "200" ] && break; sleep 5
           done
           docker logs smoke 2>&1 | tail -40
-          [ "$code" = "200" ] || { echo "login page returned $code"; exit 1; }
-          echo "login page 200"
+          [ "$code" = "200" ] || { echo "setup page returned $code"; exit 1; }
+          echo "setup page 200"
 
       - name: Push
         if: steps.check.outputs.skip == 'false'
