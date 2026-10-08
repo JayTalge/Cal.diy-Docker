@@ -27,11 +27,16 @@ concurrency:
 env:
   UPSTREAM: calcom/cal.diy
   IMAGE: ghcr.io/jaytalge/cal.diy
+  API_IMAGE: ghcr.io/jaytalge/cal.diy-api
 
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 150
+    outputs:
+      sha: ${{ steps.ref.outputs.sha }}
+      tag: ${{ steps.ref.outputs.tag }}
+      force: ${{ inputs.force || github.event_name == 'push' }}
     steps:
       - name: Resolve upstream commit
         id: ref
@@ -99,6 +104,7 @@ jobs:
             --build-arg CALCOM_TELEMETRY_DISABLED=1 \
             --build-arg ORGANIZATIONS_ENABLED=false \
             --build-arg MAX_OLD_SPACE_SIZE=8192 \
+            --build-arg NEXT_PUBLIC_API_V2_URL=http://calcom-api:5555/v2 \
             --label org.opencontainers.image.source=https://github.com/${{ github.repository }} \
             --label org.opencontainers.image.version=${{ steps.ref.outputs.tag }} \
             --label org.opencontainers.image.revision=${{ steps.ref.outputs.sha }}@${{ env.UPSTREAM }} \
@@ -134,4 +140,96 @@ jobs:
           for t in "$TAG" latest; do
             docker tag caldiy:smoke "$IMAGE:$t"
             docker push -q "$IMAGE:$t"
+          done
+
+  api:
+    # API v2 (NestJS, apps/api/v2) of the same upstream commit
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      SHA: ${{ needs.build.outputs.sha }}
+      TAG: ${{ needs.build.outputs.tag }}
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Skip if already built
+        id: check
+        env:
+          FORCE: ${{ needs.build.outputs.force }}
+        run: |
+          if [ "$FORCE" != "true" ] && docker manifest inspect "$API_IMAGE:$TAG" >/dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"; echo "$TAG already built"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Free disk space
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          docker image prune -af >/dev/null
+
+      - uses: actions/checkout@v4
+        if: steps.check.outputs.skip == 'false'
+
+      - name: Fetch upstream and apply patches
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          git init -q upstream
+          git -C upstream fetch -q --depth 1 "https://github.com/$UPSTREAM.git" "$SHA"
+          git -C upstream checkout -q FETCH_HEAD
+          for p in patches/*.patch; do
+            [ -e "$p" ] || continue
+            echo "Applying $p"
+            git -C upstream apply --verbose "../$p"
+          done
+
+      - name: Build
+        if: steps.check.outputs.skip == 'false'
+        env:
+          DOCKER_BUILDKIT: "1"
+        run: |
+          # DATABASE_URL is only needed syntactically at build time, no DB is contacted
+          docker build upstream -f upstream/apps/api/v2/Dockerfile \
+            --pull \
+            --build-arg DATABASE_URL=postgresql://build:build@localhost:5432/build \
+            --build-arg DATABASE_DIRECT_URL=postgresql://build:build@localhost:5432/build \
+            --label org.opencontainers.image.source=https://github.com/${{ github.repository }} \
+            --label org.opencontainers.image.version=$TAG \
+            --label org.opencontainers.image.revision=$SHA@$UPSTREAM \
+            --label org.opencontainers.image.description="cal.diy API v2 built from upstream main" \
+            -t caldiy-api:smoke
+
+      - name: Smoke test
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          docker network create smoke
+          docker run -d --name smoke-db --network smoke -e POSTGRES_USER=calcom -e POSTGRES_PASSWORD=calcom -e POSTGRES_DB=calcom postgres:16-alpine
+          docker run -d --name smoke-redis --network smoke redis:7-alpine
+          DB=postgresql://calcom:calcom@smoke-db:5432/calcom
+          docker run -d --name smoke --network smoke -p 5555:5555 \
+            -e NODE_ENV=production -e API_PORT=5555 -e API_URL=http://127.0.0.1:5555/api -e WEB_APP_URL=http://127.0.0.1:3000 \
+            -e DATABASE_URL=$DB -e DATABASE_READ_URL=$DB -e DATABASE_WRITE_URL=$DB \
+            -e REDIS_URL=redis://smoke-redis:6379 -e NEXTAUTH_SECRET=smoke -e CALENDSO_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef \
+            -e JWT_SECRET=smoke -e STRIPE_API_KEY= -e STRIPE_WEBHOOK_SECRET= \
+            caldiy-api:smoke
+          for i in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:5555/health || true)
+            [ "$code" = "200" ] && break; sleep 5
+          done
+          docker logs smoke 2>&1 | tail -40
+          [ "$code" = "200" ] || { echo "/health returned $code"; exit 1; }
+          echo "/health 200"
+
+      - name: Push
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          for t in "$TAG" latest; do
+            docker tag caldiy-api:smoke "$API_IMAGE:$t"
+            docker push -q "$API_IMAGE:$t"
           done

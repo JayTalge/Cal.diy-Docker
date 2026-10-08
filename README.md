@@ -4,7 +4,8 @@ Docker image for [calcom/cal.diy](https://github.com/calcom/cal.diy) (community 
 
 | Image | Tags |
 |---|---|
-| `ghcr.io/jaytalge/cal.diy` | `main-<upstream sha7>`, `latest` |
+| `ghcr.io/jaytalge/cal.diy` | web app, `main-<upstream sha7>`, `latest` |
+| `ghcr.io/jaytalge/cal.diy-api` | API v2 (NestJS, `apps/api/v2`), same tags |
 
 ## Build
 
@@ -14,7 +15,9 @@ Docker image for [calcom/cal.diy](https://github.com/calcom/cal.diy) (community 
 - Before pushing, the image starts against a throwaway Postgres (migrations + app-store seed) and `/auth/login` has to return 200.
 - Manual build: Actions → "Build image from upstream main" → Run workflow (optional commit/branch/tag, "force").
 
-Baked-in build args (generic, not site-specific): `NEXT_PUBLIC_LICENSE_CONSENT=agree`, `CALCOM_TELEMETRY_DISABLED=1`, `ORGANIZATIONS_ENABLED=false`, no `NEXT_PUBLIC_API_V2_URL` (API v2 not included).
+Baked-in build args (generic, not site-specific): `NEXT_PUBLIC_LICENSE_CONSENT=agree`, `CALCOM_TELEMETRY_DISABLED=1`, `ORGANIZATIONS_ENABLED=false`, `NEXT_PUBLIC_API_V2_URL=http://calcom-api:5555/v2`.
+
+`NEXT_PUBLIC_API_V2_URL` is a Next.js rewrite target, not a public URL: the web app proxies `/api/v2/*` to it. Run the API image as container/alias `calcom-api` on port 5555 in the same network (env: `API_PORT=5555`, `API_URL`, `WEB_APP_URL`, `DATABASE_READ_URL`, `DATABASE_WRITE_URL`, `REDIS_URL`, `NEXTAUTH_SECRET`, `STRIPE_API_KEY`/`STRIPE_WEBHOOK_SECRET` may be empty). Without the API container only `/api/v2/*` fails, the rest of the app works.
 
 ## Usage
 
