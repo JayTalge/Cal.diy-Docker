@@ -1,0 +1,128 @@
+diff --git a/apps/web/modules/auth/login-view.tsx b/apps/web/modules/auth/login-view.tsx
+index 1f77f10..97af669 100644
+--- a/apps/web/modules/auth/login-view.tsx
++++ b/apps/web/modules/auth/login-view.tsx
+@@ -105,6 +105,7 @@ export default function Login({
+   csrfToken,
+   isGoogleLoginEnabled,
+   isOutlookLoginEnabled,
++  oidcLoginName,
+   totpEmail,
+ }: PageProps) {
+   const searchParams = useCompatSearchParams();
+@@ -170,7 +171,7 @@ export default function Login({
+     else setErrorMessage(errorMessages[res.error] || t("something_went_wrong"));
+   };
+ 
+-  const showSocialLogin = isGoogleLoginEnabled || isOutlookLoginEnabled;
++  const showSocialLogin = isGoogleLoginEnabled || isOutlookLoginEnabled || !!oidcLoginName;
+   const showSignupLink =
+     process.env.NEXT_PUBLIC_DISABLE_SIGNUP !== "true" && searchParams?.get("register") !== "false";
+ 
+@@ -196,6 +197,22 @@ export default function Login({
+             {!twoFactorRequired && showSocialLogin && (
+               <>
+                 <div className="flex flex-col gap-2">
++                  {oidcLoginName && (
++                    <Button
++                      className="w-full py-1"
++                      disabled={formState.isSubmitting}
++                      data-testid="oidc"
++                      onClick={async (e) => {
++                        e.preventDefault();
++                        setLastUsed("saml");
++                        await signIn("oidc", {
++                          callbackUrl,
++                        });
++                      }}>
++                      <span>{oidcLoginName}</span>
++                      {lastUsed === "saml" && <LastUsed />}
++                    </Button>
++                  )}
+                   {isGoogleLoginEnabled && (
+                     <Button
+                       className="w-full py-1"
+diff --git a/apps/web/server/lib/auth/login/getServerSideProps.tsx b/apps/web/server/lib/auth/login/getServerSideProps.tsx
+index b1be159..964bc8a 100644
+--- a/apps/web/server/lib/auth/login/getServerSideProps.tsx
++++ b/apps/web/server/lib/auth/login/getServerSideProps.tsx
+@@ -89,6 +89,14 @@ export async function getServerSideProps(context: GetServerSidePropsContext) {
+       csrfToken: await getCsrfToken(context),
+       isGoogleLoginEnabled: IS_GOOGLE_LOGIN_ENABLED,
+       isOutlookLoginEnabled: false,
++      // Generic OIDC login (Cal.diy-Docker patch)
++      oidcLoginName:
++        process.env.OIDC_LOGIN_ENABLED === "true" &&
++        process.env.OIDC_ISSUER &&
++        process.env.OIDC_CLIENT_ID &&
++        process.env.OIDC_CLIENT_SECRET
++          ? process.env.OIDC_NAME || "SSO"
++          : null,
+       totpEmail,
+     },
+   };
+diff --git a/packages/features/auth/lib/identityProviders.ts b/packages/features/auth/lib/identityProviders.ts
+index 37d540c..05a108e 100644
+--- a/packages/features/auth/lib/identityProviders.ts
++++ b/packages/features/auth/lib/identityProviders.ts
+@@ -9,6 +9,8 @@ export const NEXTAUTH_TO_IDENTITY_PROVIDER: Record<string, IdentityProvider> = {
+   google: IdentityProvider.GOOGLE,
+   saml: IdentityProvider.SAML,
+   "saml-idp": IdentityProvider.SAML,
++  // Generic OIDC login (Cal.diy-Docker patch), stored like SAML: an external enterprise IdP
++  oidc: IdentityProvider.SAML,
+   cal: IdentityProvider.CAL,
+ };
+ 
+diff --git a/packages/features/auth/lib/next-auth-options.ts b/packages/features/auth/lib/next-auth-options.ts
+index 296e645..e713d8a 100644
+--- a/packages/features/auth/lib/next-auth-options.ts
++++ b/packages/features/auth/lib/next-auth-options.ts
+@@ -356,6 +356,47 @@ if (OUTLOOK_LOGIN_ENABLED && OUTLOOK_CLIENT_ID && OUTLOOK_CLIENT_SECRET) {
+   );
+ }
+ 
++// Generic OIDC login (Cal.diy-Docker patch), e.g. Authentik or Keycloak.
++// OIDC_ISSUER is the issuer URL; its /.well-known/openid-configuration must be reachable.
++const OIDC_ISSUER = process.env.OIDC_ISSUER?.replace(/\/+$/, "");
++if (
++  process.env.OIDC_LOGIN_ENABLED === "true" &&
++  OIDC_ISSUER &&
++  process.env.OIDC_CLIENT_ID &&
++  process.env.OIDC_CLIENT_SECRET
++) {
++  // Only set OIDC_TRUST_EMAIL when the IdP controls the e-mail addresses (no self-service changes)
++  const trustEmail = process.env.OIDC_TRUST_EMAIL === "true";
++  const oidcProvider = {
++    id: "oidc",
++    name: process.env.OIDC_NAME || "SSO",
++    type: "oauth" as const,
++    wellKnown: `${OIDC_ISSUER}/.well-known/openid-configuration`,
++    clientId: process.env.OIDC_CLIENT_ID,
++    clientSecret: process.env.OIDC_CLIENT_SECRET,
++    authorization: { params: { scope: process.env.OIDC_SCOPES || "openid email profile" } },
++    idToken: true,
++    checks: ["pkce", "state"] as ("pkce" | "state")[],
++    allowDangerousEmailAccountLinking: true,
++    profile(profile: Record<string, unknown>) {
++      const email = typeof profile.email === "string" ? profile.email.toLowerCase() : null;
++      const name =
++        (typeof profile.name === "string" && profile.name) ||
++        (typeof profile.preferred_username === "string" && profile.preferred_username) ||
++        email;
++      return {
++        id: String(profile.sub),
++        name,
++        email,
++        image: null,
++        ...((trustEmail || profile.email_verified === true) && { emailVerified: new Date() }),
++      };
++    },
++  };
++  // cast: next-auth types User.id as number via packages/types/next-auth.d.ts, OAuth ids are strings
++  providers.push(oidcProvider as unknown as Provider);
++}
++
+ providers.push(
+   EmailProvider({
+     type: "email",

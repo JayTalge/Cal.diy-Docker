@@ -38,6 +38,23 @@ volumes:
   db:
 ```
 
+## Patches
+
+### 0001-generic-oidc-login
+
+Adds a generic OpenID Connect login (cal.diy itself only has Google and Azure AD). Off unless configured:
+
+| Env | Meaning |
+|---|---|
+| `OIDC_LOGIN_ENABLED=true` | enables the provider |
+| `OIDC_ISSUER` | issuer URL, e.g. `https://auth.example.com/application/o/cal/` (Authentik) |
+| `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | confidential client |
+| `OIDC_NAME` | button label on the login page (default `SSO`) |
+| `OIDC_SCOPES` | default `openid email profile` |
+| `OIDC_TRUST_EMAIL=true` | treat the IdP e-mail as verified even without `email_verified` (only if users cannot change their e-mail in the IdP) |
+
+Redirect URI: `<NEXT_PUBLIC_WEBAPP_URL>/api/auth/callback/oidc`. Users are stored with identity provider `SAML` (no DB migration). A first SSO login creates the user; an existing password user with the same verified e-mail is switched to SSO.
+
 ## Runtime notes
 
 - The public URL is not baked in: `scripts/start.sh` replaces the build URL with `NEXT_PUBLIC_WEBAPP_URL` on every start.
