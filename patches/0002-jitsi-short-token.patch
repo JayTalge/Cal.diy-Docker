@@ -1,0 +1,26 @@
+diff --git a/packages/app-store/jitsivideo/lib/VideoApiAdapter.ts b/packages/app-store/jitsivideo/lib/VideoApiAdapter.ts
+index d1df116..c017b04 100644
+--- a/packages/app-store/jitsivideo/lib/VideoApiAdapter.ts
++++ b/packages/app-store/jitsivideo/lib/VideoApiAdapter.ts
+@@ -7,6 +7,13 @@ import type { VideoApiAdapter, VideoCallData } from "@calcom/types/VideoApiAdapt
+ import getAppKeysFromSlug from "../../_utils/getAppKeysFromSlug";
+ import { metadata } from "../_metadata";
+ 
++// Short random room name (Cal.diy-Docker patch): 10 characters without look-alikes (0/o, 1/l),
++// lowercase because Jitsi treats room names case-insensitively. 32^10 ≈ 1.1e15 possibilities.
++const SHORT_TOKEN_ALPHABET = "abcdefghijkmnpqrstuvwxyz23456789";
++// 256 is a multiple of 32, so `byte % 32` is unbiased
++const shortToken = (length = 10) =>
++  Array.from(crypto.getRandomValues(new Uint8Array(length)), (b) => SHORT_TOKEN_ALPHABET[b % 32]).join("");
++
+ const JitsiVideoApiAdapter = (): VideoApiAdapter => {
+   return {
+     getAvailability: () => {
+@@ -21,6 +28,7 @@ const JitsiVideoApiAdapter = (): VideoApiAdapter => {
+       //Allows "/{Type}-with-{Attendees}" slug
+       const meetingID = meetingPattern
+         .replaceAll("{uuid}", uuidv4())
++        .replaceAll("{token}", shortToken())
+         .replaceAll("{Title}", eventData.title)
+         .replaceAll("{Event Type Title}", eventData.type)
+         .replaceAll("{Scheduler}", eventData.attendees.map((a) => a.name).join("-"))

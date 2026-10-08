@@ -59,6 +59,10 @@ Redirect URI: `<NEXT_PUBLIC_WEBAPP_URL>/api/auth/callback/oidc`. In Authentik th
 
 Users are stored with identity provider `SAML` (no DB migration). A first SSO login creates the user; an existing password user with the same verified e-mail is switched to SSO.
 
+### 0002-jitsi-short-token
+
+Adds the placeholder `{token}` to the Jitsi app's room name pattern (`jitsiPathPattern`): 10 random characters from `a-z2-9` without look-alikes (no `0 o 1 l`), e.g. `t95qi2jjpm`. Set it in Settings → Admin → Apps → Jitsi together with `jitsiHost` (e.g. `https://meet.example.com`). The default stays `{uuid}`.
+
 ## Runtime notes
 
 - The public URL is not baked in: `scripts/start.sh` replaces the build URL with `NEXT_PUBLIC_WEBAPP_URL` on every start.
