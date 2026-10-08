@@ -75,10 +75,19 @@ index 37d540c..05a108e 100644
  };
  
 diff --git a/packages/features/auth/lib/next-auth-options.ts b/packages/features/auth/lib/next-auth-options.ts
-index 296e645..e713d8a 100644
+index 296e645..cd28e20 100644
 --- a/packages/features/auth/lib/next-auth-options.ts
 +++ b/packages/features/auth/lib/next-auth-options.ts
-@@ -356,6 +356,47 @@ if (OUTLOOK_LOGIN_ENABLED && OUTLOOK_CLIENT_ID && OUTLOOK_CLIENT_SECRET) {
+@@ -30,6 +30,8 @@ import { isENVDev } from "@calcom/lib/env";
+ import logger from "@calcom/lib/logger";
+ import { randomString } from "@calcom/lib/random";
+ import { safeStringify } from "@calcom/lib/safeStringify";
++import { uploadAvatar } from "@calcom/lib/server/avatar";
++import { resizeBase64Image } from "@calcom/lib/server/resizeBase64Image";
+ import { hashEmail } from "@calcom/lib/server/PiiHasher";
+ import slugify from "@calcom/lib/slugify";
+ import type { TrackingData } from "@calcom/lib/tracking";
+@@ -356,6 +358,72 @@ if (OUTLOOK_LOGIN_ENABLED && OUTLOOK_CLIENT_ID && OUTLOOK_CLIENT_SECRET) {
    );
  }
  
@@ -123,9 +132,54 @@ index 296e645..e713d8a 100644
 +  providers.push(oidcProvider as unknown as Provider);
 +}
 +
++// Copies the IdP profile picture (OIDC claim "picture") into the cal avatar on every OIDC login.
++// Only https URLs on the issuer host are fetched, so a profile claim cannot make the server request other hosts.
++const updateProfilePhotoOidc = async (picture: unknown, userId: number) => {
++  if (typeof picture !== "string" || !OIDC_ISSUER) return;
++  try {
++    const url = new URL(picture);
++    if (url.protocol !== "https:" || url.host !== new URL(OIDC_ISSUER).host) return;
++    const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
++    const contentType = response.headers.get("content-type") || "";
++    if (!response.ok || !contentType.startsWith("image/")) {
++      log.warn("OIDC profile picture not loaded", { status: response.status, contentType });
++      return;
++    }
++    const buffer = Buffer.from(await response.arrayBuffer());
++    if (buffer.length > 5 * 1024 * 1024) return;
++    const avatarUrl = await uploadAvatar({
++      avatar: await resizeBase64Image(`data:${contentType};base64,${buffer.toString("base64")}`),
++      userId,
++    });
++    await prisma.user.update({ where: { id: userId }, data: { avatarUrl } });
++  } catch (error) {
++    log.error("Error updating avatar from OIDC sign-in", safeStringify(error));
++  }
++};
++
  providers.push(
    EmailProvider({
      type: "email",
+@@ -426,6 +494,8 @@ export const getOptions = ({
+       user,
+       // Available only in the first call once the user signs in. Not available in subsequent calls
+       account,
++      // Available only in the first call once the user signs in (OAuth profile from the IdP)
++      profile,
+     }) {
+       log.debug("callbacks:jwt", safeStringify({ token, user, account, trigger, session }));
+       // The data available in 'session' depends on what data was supplied in update method call of session
+@@ -727,6 +797,10 @@ export const getOptions = ({
+           await updateProfilePhotoMicrosoft(account.access_token, Number(user.id));
+         }
+ 
++        if (account.provider === "oidc") {
++          await updateProfilePhotoOidc((profile as unknown as Record<string, unknown> | undefined)?.picture, existingUser.id);
++        }
++
+         const allProfiles = await ProfileRepository.findAllProfilesForUserIncludingMovedUser(existingUser);
+         const { upId } = determineProfile({ profiles: allProfiles, token });
+         log.debug(
 diff --git a/turbo.json b/turbo.json
 index 4c5450d..eb12a5d 100644
 --- a/turbo.json

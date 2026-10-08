@@ -55,7 +55,9 @@ Adds a generic OpenID Connect login (cal.diy itself only has Google and Azure AD
 
 The patch also adds the `OIDC_*` variables to `globalEnv` in `turbo.json`: the container starts the app via `turbo run start`, which only passes declared variables to the Next server.
 
-Redirect URI: `<NEXT_PUBLIC_WEBAPP_URL>/api/auth/callback/oidc`. In Authentik the provider needs grant type `authorization_code`. Users are stored with identity provider `SAML` (no DB migration). A first SSO login creates the user; an existing password user with the same verified e-mail is switched to SSO.
+Redirect URI: `<NEXT_PUBLIC_WEBAPP_URL>/api/auth/callback/oidc`. In Authentik the provider needs grant type `authorization_code`. On every OIDC login the `picture` claim is copied into the cal.diy avatar (only https URLs on the issuer host, max 5 MB, resized like Google/Microsoft photos). With Authentik, add a scope mapping for `profile` that returns `picture`.
+
+Users are stored with identity provider `SAML` (no DB migration). A first SSO login creates the user; an existing password user with the same verified e-mail is switched to SSO.
 
 ## Runtime notes
 
