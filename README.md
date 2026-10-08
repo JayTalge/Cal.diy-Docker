@@ -12,7 +12,7 @@ Docker image for [calcom/cal.diy](https://github.com/calcom/cal.diy) (community 
 - cal.diy has no regular release tags any more (last tag v6.2.0, 2026-03). Fixes land on `main`, so this repo builds **main HEAD**.
 - Every day at 02:17 UTC the workflow resolves upstream `main`. It builds only if `main-<sha7>` is not in GHCR yet.
 - `patches/*.patch` are applied with `git apply` before the build. A push to `patches/` or the workflow rebuilds the current upstream commit (same tag is overwritten).
-- Before pushing, the image starts against a throwaway Postgres (migrations + app-store seed) and the first-admin page `/auth/setup` has to return 200.
+- Before pushing, the image starts against a throwaway Postgres (migrations + app-store seed) and `/auth/login` (following redirects) has to end in a 200.
 - Manual build: Actions → "Build image from upstream main" → Run workflow (optional commit/branch/tag, "force").
 
 Baked-in build args (generic, not site-specific): `NEXT_PUBLIC_LICENSE_CONSENT=agree`, `CALCOM_TELEMETRY_DISABLED=1`, `ORGANIZATIONS_ENABLED=false`, `NEXT_PUBLIC_API_V2_URL=http://calcom-api:5555/v2`.

@@ -124,14 +124,16 @@ jobs:
             -e NEXTAUTH_URL=http://127.0.0.1:3000/api/auth \
             -e NEXTAUTH_SECRET=smoke -e CALENDSO_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef \
             caldiy:smoke
+          # follow redirects (a fresh install redirects to the first-admin setup), final page must be 200
           for i in $(seq 1 90); do
-            # without users /auth/login redirects (307) to the first-admin setup page
-            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/auth/setup || true)
+            code=$(curl -sL -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/auth/login || true)
             [ "$code" = "200" ] && break; sleep 5
           done
           docker logs smoke 2>&1 | tail -40
-          [ "$code" = "200" ] || { echo "setup page returned $code"; exit 1; }
-          echo "setup page 200"
+          echo "--- redirect chain"
+          curl -sIL http://127.0.0.1:3000/auth/login | grep -iE '^(HTTP|location)' || true
+          [ "$code" = "200" ] || { echo "final page returned $code"; exit 1; }
+          echo "final page 200"
 
       - name: Push
         if: steps.check.outputs.skip == 'false'
