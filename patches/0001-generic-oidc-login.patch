@@ -75,7 +75,7 @@ index 37d540c..05a108e 100644
  };
  
 diff --git a/packages/features/auth/lib/next-auth-options.ts b/packages/features/auth/lib/next-auth-options.ts
-index 296e645..cd28e20 100644
+index 296e645..aabf09a 100644
 --- a/packages/features/auth/lib/next-auth-options.ts
 +++ b/packages/features/auth/lib/next-auth-options.ts
 @@ -30,6 +30,8 @@ import { isENVDev } from "@calcom/lib/env";
@@ -87,13 +87,25 @@ index 296e645..cd28e20 100644
  import { hashEmail } from "@calcom/lib/server/PiiHasher";
  import slugify from "@calcom/lib/slugify";
  import type { TrackingData } from "@calcom/lib/tracking";
-@@ -356,6 +358,72 @@ if (OUTLOOK_LOGIN_ENABLED && OUTLOOK_CLIENT_ID && OUTLOOK_CLIENT_SECRET) {
+@@ -356,6 +358,101 @@ if (OUTLOOK_LOGIN_ENABLED && OUTLOOK_CLIENT_ID && OUTLOOK_CLIENT_SECRET) {
    );
  }
  
 +// Generic OIDC login (Cal.diy-Docker patch), e.g. Authentik or Keycloak.
 +// OIDC_ISSUER is the issuer URL; its /.well-known/openid-configuration must be reachable.
 +const OIDC_ISSUER = process.env.OIDC_ISSUER?.replace(/\/+$/, "");
++// Comma-separated IdP group names (claim "groups") whose members get the cal role ADMIN; empty = roles untouched
++const OIDC_ADMIN_GROUPS = (process.env.OIDC_ADMIN_GROUPS || "")
++  .split(",")
++  .map((group) => group.trim())
++  .filter(Boolean);
++// Settings for users created by an OIDC login (cal defaults are Europe/London, Sunday, 12h)
++const OIDC_NEW_USER_DEFAULTS = {
++  ...(process.env.OIDC_DEFAULT_TIMEZONE && { timeZone: process.env.OIDC_DEFAULT_TIMEZONE }),
++  ...(process.env.OIDC_DEFAULT_LOCALE && { locale: process.env.OIDC_DEFAULT_LOCALE }),
++  ...(process.env.OIDC_DEFAULT_WEEK_START && { weekStart: process.env.OIDC_DEFAULT_WEEK_START }),
++  ...(process.env.OIDC_DEFAULT_TIME_FORMAT && { timeFormat: Number(process.env.OIDC_DEFAULT_TIME_FORMAT) }),
++};
 +if (
 +  process.env.OIDC_LOGIN_ENABLED === "true" &&
 +  OIDC_ISSUER &&
@@ -132,6 +144,23 @@ index 296e645..cd28e20 100644
 +  providers.push(oidcProvider as unknown as Provider);
 +}
 +
++// Sets the cal role from the IdP groups on every OIDC login (only when OIDC_ADMIN_GROUPS is set)
++const syncRoleFromOidcGroups = async (
++  groups: unknown,
++  user: { id: number; role: UserPermissionRole }
++): Promise<UserPermissionRole> => {
++  if (OIDC_ADMIN_GROUPS.length === 0) return user.role;
++  const userGroups = Array.isArray(groups) ? groups.filter((g): g is string => typeof g === "string") : [];
++  const role = userGroups.some((g) => OIDC_ADMIN_GROUPS.includes(g))
++    ? UserPermissionRole.ADMIN
++    : UserPermissionRole.USER;
++  if (role !== user.role) {
++    await prisma.user.update({ where: { id: user.id }, data: { role } });
++    log.info("OIDC role updated from IdP groups", { userId: user.id, role });
++  }
++  return role;
++};
++
 +// Copies the IdP profile picture (OIDC claim "picture") into the cal avatar on every OIDC login.
 +// Only https URLs on the issuer host are fetched, so a profile claim cannot make the server request other hosts.
 +const updateProfilePhotoOidc = async (picture: unknown, userId: number) => {
@@ -160,7 +189,7 @@ index 296e645..cd28e20 100644
  providers.push(
    EmailProvider({
      type: "email",
-@@ -426,6 +494,8 @@ export const getOptions = ({
+@@ -426,6 +523,8 @@ export const getOptions = ({
        user,
        // Available only in the first call once the user signs in. Not available in subsequent calls
        account,
@@ -169,26 +198,41 @@ index 296e645..cd28e20 100644
      }) {
        log.debug("callbacks:jwt", safeStringify({ token, user, account, trigger, session }));
        // The data available in 'session' depends on what data was supplied in update method call of session
-@@ -727,6 +797,10 @@ export const getOptions = ({
+@@ -727,6 +826,12 @@ export const getOptions = ({
            await updateProfilePhotoMicrosoft(account.access_token, Number(user.id));
          }
  
 +        if (account.provider === "oidc") {
-+          await updateProfilePhotoOidc((profile as unknown as Record<string, unknown> | undefined)?.picture, existingUser.id);
++          const oidcProfile = profile as unknown as Record<string, unknown> | undefined;
++          await updateProfilePhotoOidc(oidcProfile?.picture, existingUser.id);
++          existingUser.role = await syncRoleFromOidcGroups(oidcProfile?.groups, existingUser);
 +        }
 +
          const allProfiles = await ProfileRepository.findAllProfilesForUserIncludingMovedUser(existingUser);
          const { upId } = determineProfile({ profiles: allProfiles, token });
          log.debug(
+@@ -1117,6 +1222,7 @@ export const getOptions = ({
+               emailVerified: new Date(Date.now()),
+               name: user.name,
+               ...(user.image && { avatarUrl: user.image }),
++              ...(account.provider === "oidc" && OIDC_NEW_USER_DEFAULTS),
+               email: user.email,
+               identityProvider: idP,
+               identityProviderId: account.providerAccountId,
 diff --git a/turbo.json b/turbo.json
-index 4c5450d..eb12a5d 100644
+index 4c5450d..54d0b0a 100644
 --- a/turbo.json
 +++ b/turbo.json
-@@ -80,6 +80,13 @@
+@@ -80,6 +80,18 @@
      "GOOGLE_API_CREDENTIALS",
      "GOOGLE_CALENDAR_API_KEY",
      "GOOGLE_LOGIN_ENABLED",
++    "OIDC_ADMIN_GROUPS",
 +    "OIDC_CLIENT_ID",
++    "OIDC_DEFAULT_LOCALE",
++    "OIDC_DEFAULT_TIME_FORMAT",
++    "OIDC_DEFAULT_TIMEZONE",
++    "OIDC_DEFAULT_WEEK_START",
 +    "OIDC_CLIENT_SECRET",
 +    "OIDC_ISSUER",
 +    "OIDC_LOGIN_ENABLED",
