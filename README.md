@@ -53,7 +53,9 @@ Adds a generic OpenID Connect login (cal.diy itself only has Google and Azure AD
 | `OIDC_SCOPES` | default `openid email profile` |
 | `OIDC_TRUST_EMAIL=true` | treat the IdP e-mail as verified even without `email_verified` (only if users cannot change their e-mail in the IdP) |
 
-Redirect URI: `<NEXT_PUBLIC_WEBAPP_URL>/api/auth/callback/oidc`. Users are stored with identity provider `SAML` (no DB migration). A first SSO login creates the user; an existing password user with the same verified e-mail is switched to SSO.
+The patch also adds the `OIDC_*` variables to `globalEnv` in `turbo.json`: the container starts the app via `turbo run start`, which only passes declared variables to the Next server.
+
+Redirect URI: `<NEXT_PUBLIC_WEBAPP_URL>/api/auth/callback/oidc`. In Authentik the provider needs grant type `authorization_code`. Users are stored with identity provider `SAML` (no DB migration). A first SSO login creates the user; an existing password user with the same verified e-mail is switched to SSO.
 
 ## Runtime notes
 

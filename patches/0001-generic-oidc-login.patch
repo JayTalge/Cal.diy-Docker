@@ -126,3 +126,21 @@ index 296e645..e713d8a 100644
  providers.push(
    EmailProvider({
      type: "email",
+diff --git a/turbo.json b/turbo.json
+index 4c5450d..eb12a5d 100644
+--- a/turbo.json
++++ b/turbo.json
+@@ -80,6 +80,13 @@
+     "GOOGLE_API_CREDENTIALS",
+     "GOOGLE_CALENDAR_API_KEY",
+     "GOOGLE_LOGIN_ENABLED",
++    "OIDC_CLIENT_ID",
++    "OIDC_CLIENT_SECRET",
++    "OIDC_ISSUER",
++    "OIDC_LOGIN_ENABLED",
++    "OIDC_NAME",
++    "OIDC_SCOPES",
++    "OIDC_TRUST_EMAIL",
+     "GOOGLE_WEBHOOK_TOKEN",
+     "GOOGLE_WEBHOOK_URL",
+     "HEROKU_APP_NAME",
