@@ -1,0 +1,137 @@
+name: Build image from upstream main
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Upstream cal.diy commit/branch/tag to build (empty = main HEAD)"
+        required: false
+      force:
+        description: "Rebuild even if the tag already exists in GHCR"
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    paths: ["patches/**", ".github/workflows/build.yml"]
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: build
+  cancel-in-progress: false
+
+env:
+  UPSTREAM: calcom/cal.diy
+  IMAGE: ghcr.io/jaytalge/cal.diy
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - name: Resolve upstream commit
+        id: ref
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_REF: ${{ inputs.ref }}
+        run: |
+          REF="${INPUT_REF:-main}"
+          SHA=$(gh api "repos/$UPSTREAM/commits/$REF" --jq .sha)
+          echo "$SHA" | grep -Eq '^[0-9a-f]{40}$' || { echo "Unexpected sha: $SHA"; exit 1; }
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "tag=main-${SHA:0:7}" >> "$GITHUB_OUTPUT"
+          echo "Upstream $REF = $SHA"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Skip if already built
+        id: check
+        env:
+          TAG: ${{ steps.ref.outputs.tag }}
+          FORCE: ${{ inputs.force || github.event_name == 'push' }}
+        run: |
+          if [ "$FORCE" != "true" ] && docker manifest inspect "$IMAGE:$TAG" >/dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"; echo "$TAG already built"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Free disk space
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          docker image prune -af >/dev/null
+          df -h /
+
+      - uses: actions/checkout@v4
+        if: steps.check.outputs.skip == 'false'
+
+      - name: Fetch upstream and apply patches
+        if: steps.check.outputs.skip == 'false'
+        env:
+          SHA: ${{ steps.ref.outputs.sha }}
+        run: |
+          git init -q upstream
+          git -C upstream fetch -q --depth 1 "https://github.com/$UPSTREAM.git" "$SHA"
+          git -C upstream checkout -q FETCH_HEAD
+          for p in patches/*.patch; do
+            [ -e "$p" ] || continue
+            echo "Applying $p"
+            git -C upstream apply --verbose "../$p"
+          done
+
+      - name: Build
+        if: steps.check.outputs.skip == 'false'
+        env:
+          DOCKER_BUILDKIT: "1"
+        run: |
+          docker build upstream \
+            --pull \
+            --build-arg NEXT_PUBLIC_LICENSE_CONSENT=agree \
+            --build-arg CALCOM_TELEMETRY_DISABLED=1 \
+            --build-arg ORGANIZATIONS_ENABLED=false \
+            --build-arg MAX_OLD_SPACE_SIZE=8192 \
+            --label org.opencontainers.image.source=https://github.com/${{ github.repository }} \
+            --label org.opencontainers.image.version=${{ steps.ref.outputs.tag }} \
+            --label org.opencontainers.image.revision=${{ steps.ref.outputs.sha }}@${{ env.UPSTREAM }} \
+            --label org.opencontainers.image.description="cal.diy built from upstream main" \
+            -t caldiy:smoke
+
+      - name: Smoke test
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          docker network create smoke
+          docker run -d --name smoke-db --network smoke -e POSTGRES_USER=calcom -e POSTGRES_PASSWORD=calcom -e POSTGRES_DB=calcom postgres:16-alpine
+          docker run -d --name smoke --network smoke -p 3000:3000 \
+            -e DATABASE_HOST=smoke-db:5432 \
+            -e DATABASE_URL=postgresql://calcom:calcom@smoke-db:5432/calcom \
+            -e DATABASE_DIRECT_URL=postgresql://calcom:calcom@smoke-db:5432/calcom \
+            -e NEXT_PUBLIC_WEBAPP_URL=http://127.0.0.1:3000 \
+            -e NEXTAUTH_URL=http://127.0.0.1:3000/api/auth \
+            -e NEXTAUTH_SECRET=smoke -e CALENDSO_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef \
+            caldiy:smoke
+          for i in $(seq 1 90); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/auth/login || true)
+            [ "$code" = "200" ] && break; sleep 5
+          done
+          docker logs smoke 2>&1 | tail -40
+          [ "$code" = "200" ] || { echo "login page returned $code"; exit 1; }
+          echo "login page 200"
+
+      - name: Push
+        if: steps.check.outputs.skip == 'false'
+        env:
+          TAG: ${{ steps.ref.outputs.tag }}
+        run: |
+          for t in "$TAG" latest; do
+            docker tag caldiy:smoke "$IMAGE:$t"
+            docker push -q "$IMAGE:$t"
+          done
