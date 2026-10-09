@@ -1,0 +1,16 @@
+diff --git a/scripts/start.sh b/scripts/start.sh
+index 6e649a9..5c5a45a 100644
+--- a/scripts/start.sh
++++ b/scripts/start.sh
+@@ -5,6 +5,11 @@ set -x
+ # NOTE: if these values are the same, this will be skipped.
+ scripts/replace-placeholder.sh "$BUILT_NEXT_PUBLIC_WEBAPP_URL" "$NEXT_PUBLIC_WEBAPP_URL"
+ 
++# Optional display name for the Jitsi app (app store, location picker, booking page, e-mails)
++if [ -n "$JITSI_APP_NAME" ]; then
++  scripts/replace-placeholder.sh "Jitsi Video" "$JITSI_APP_NAME"
++fi
++
+ scripts/wait-for-it.sh ${DATABASE_HOST} -- echo "database is up"
+ npx prisma migrate deploy --schema /calcom/packages/prisma/schema.prisma
+ npx ts-node --transpile-only /calcom/scripts/seed-app-store.ts

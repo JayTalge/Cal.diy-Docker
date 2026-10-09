@@ -1,0 +1,14 @@
+diff --git a/scripts/seed-app-store.ts b/scripts/seed-app-store.ts
+index 45b1f36..5bead82 100644
+--- a/scripts/seed-app-store.ts
++++ b/scripts/seed-app-store.ts
+@@ -51,7 +51,8 @@ async function createApp(
+ 
+     // Only enable apps if they have valid keys (or don't require keys)
+     const keysToValidate = (keys ?? foundApp?.keys) as Prisma.JsonValue | undefined;
+-    const enabled = shouldEnableApp(dirName, keysToValidate);
++    // An app an admin disabled (Settings → Admin → Apps) stays disabled; the seed only turns apps off
++    const enabled = shouldEnableApp(dirName, keysToValidate) && (foundApp?.enabled ?? true);
+     const data = {
+       slug,
+       dirName,

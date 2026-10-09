@@ -65,6 +65,14 @@ Users are stored with identity provider `SAML` (no DB migration). A first SSO lo
 
 Adds the placeholder `{token}` to the Jitsi app's room name pattern (`jitsiPathPattern`): 10 random characters from `a-z2-9` without look-alikes (no `0 o 1 l`), e.g. `t95qi2jjpm`. Set it in Settings → Admin → Apps → Jitsi together with `jitsiHost` (e.g. `https://meet.example.com`). The default stays `{uuid}`.
 
+### 0003-seed-keep-disabled-apps
+
+Every container start runs the app-store seed (`scripts/seed-app-store.ts`). Upstream it recomputes `enabled` for every app from its keys, so apps an admin disabled in Settings → Admin → Apps come back after each restart or update. With the patch an app that is disabled in the DB stays disabled; the seed can still disable apps with missing keys, it never re-enables one.
+
+### 0004-jitsi-app-name
+
+Optional env `JITSI_APP_NAME` (e.g. `Video Meeting`): on start `scripts/start.sh` replaces the display name `Jitsi Video` in the built app (app store, location picker, booking page, e-mails, calendar events). The app slug, location type `integrations:jitsi` and existing bookings are unchanged. Unset = upstream name.
+
 ## Runtime notes
 
 - The public URL is not baked in: `scripts/start.sh` replaces the build URL with `NEXT_PUBLIC_WEBAPP_URL` on every start.
