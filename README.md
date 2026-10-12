@@ -73,6 +73,20 @@ Every container start runs the app-store seed (`scripts/seed-app-store.ts`). Ups
 
 Optional env `JITSI_APP_NAME` (e.g. `Video Meeting`): on start `scripts/start.sh` replaces the display name `Jitsi Video` in the built app (app store, location picker, booking page, e-mails, calendar events). The app slug, location type `integrations:jitsi` and existing bookings are unchanged. Unset = upstream name.
 
+### 0005-runtime-branding
+
+Optional env for the defaults that upstream bakes in at build time (`NEXT_PUBLIC_*`, so plain runtime env has no effect). On start `scripts/replace-branding.sh` replaces them literally in `apps/web/.next` and `apps/web/public` (text files only):
+
+| Env | Replaces | Shows up in |
+|---|---|---|
+| `BRAND_APP_NAME` | `Cal.diy` | page titles, terms sentence on the booking form, e-mail texts, UI |
+| `BRAND_COMPANY_NAME` | `Cal.com, Inc.` | e-mail footers, legal texts |
+| `BRAND_SUPPORT_EMAIL` | `help@cal.com` | support links |
+| `BRAND_TERMS_URL` | `https://cal.com/terms` | "terms" link (booking form, signup) |
+| `BRAND_PRIVACY_URL` | `https://cal.com/privacy` | "privacy" link |
+
+Unset = upstream value. Values must not contain `"` (they end up inside JS strings). The sender name of organizer e-mails is the runtime env `EMAIL_FROM_NAME`; attendee e-mails use the organizer's name. The e-mail logo is the static file `apps/web/public/emails/logo.png` (shown at 89×19 px), replace it with a bind mount, e.g. a 356×76 PNG.
+
 ## Runtime notes
 
 - The public URL is not baked in: `scripts/start.sh` replaces the build URL with `NEXT_PUBLIC_WEBAPP_URL` on every start.

@@ -1,0 +1,40 @@
+diff --git a/scripts/replace-branding.sh b/scripts/replace-branding.sh
+new file mode 100755
+index 0000000..2f969b8
+--- /dev/null
++++ b/scripts/replace-branding.sh
+@@ -0,0 +1,16 @@
++#!/bin/sh
++# Replace a statically built branding value in apps/web/.next and apps/web/public.
++# Unlike replace-placeholder.sh the search is literal (dots etc. are not regex) and
++# binary files are skipped. Does nothing if TO is empty or equal to FROM.
++FROM=$1
++TO=$2
++
++if [ -z "${TO}" ] || [ "${FROM}" = "${TO}" ]; then
++    exit 0
++fi
++
++echo "Replacing all statically built instances of $FROM with $TO."
++
++FROM_RE=$(printf '%s' "$FROM" | sed 's/[][\.*^$|/]/\\&/g')
++TO_RE=$(printf '%s' "$TO" | sed 's/[\&|]/\\&/g')
++grep -rlIZF -- "$FROM" apps/web/.next/ apps/web/public/ | xargs -0 -r sed -i -e "s|$FROM_RE|$TO_RE|g"
+diff --git a/scripts/start.sh b/scripts/start.sh
+index 5c5a45a..24408d2 100644
+--- a/scripts/start.sh
++++ b/scripts/start.sh
+@@ -10,6 +10,13 @@ if [ -n "$JITSI_APP_NAME" ]; then
+   scripts/replace-placeholder.sh "Jitsi Video" "$JITSI_APP_NAME"
+ fi
+ 
++# Optional runtime branding of the statically built defaults (UI, booking page, e-mails)
++scripts/replace-branding.sh "Cal.diy" "$BRAND_APP_NAME"
++scripts/replace-branding.sh "Cal.com, Inc." "$BRAND_COMPANY_NAME"
++scripts/replace-branding.sh "help@cal.com" "$BRAND_SUPPORT_EMAIL"
++scripts/replace-branding.sh "https://cal.com/terms" "$BRAND_TERMS_URL"
++scripts/replace-branding.sh "https://cal.com/privacy" "$BRAND_PRIVACY_URL"
++
+ scripts/wait-for-it.sh ${DATABASE_HOST} -- echo "database is up"
+ npx prisma migrate deploy --schema /calcom/packages/prisma/schema.prisma
+ npx ts-node --transpile-only /calcom/scripts/seed-app-store.ts
