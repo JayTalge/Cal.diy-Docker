@@ -1,0 +1,31 @@
+diff --git a/packages/lib/CalendarService.ts b/packages/lib/CalendarService.ts
+index 27a818e..901b396 100644
+--- a/packages/lib/CalendarService.ts
++++ b/packages/lib/CalendarService.ts
+@@ -745,11 +745,13 @@ export default abstract class BaseCalendarService implements Calendar {
+ 
+           const start = dayjs(dateFrom);
+           const end = dayjs(dateTo);
+-          const startDate = ICAL.Time.fromDateTimeString(startISOString);
+-          startDate.hour = event.startDate.hour;
+-          startDate.minute = event.startDate.minute;
+-          startDate.second = event.startDate.second;
+-          const iterator = event.iterator(startDate);
++          // Iterate from the series' own DTSTART: ical.js treats an iterator start time as the
++          // series DTSTART, so a synthetic one (query day + event time) adds an occurrence on the
++          // query day and moves weekly series without BYDAY onto the query weekday.
++          const iterator = event.iterator();
++          // Occurrences well before the window don't count towards maxIterations, so long-running
++          // series still reach it.
++          const skipBefore = start.subtract(1, "day");
+           let current: ICAL.Time;
+           let currentEvent: ReturnType<typeof event.getOccurrenceDetails> | undefined;
+           let currentStart: ReturnType<typeof dayjs> | null = null;
+@@ -762,6 +764,7 @@ export default abstract class BaseCalendarService implements Calendar {
+             // returned
+             (current = iterator.next())
+           ) {
++            if (dayjs(current.toJSDate()).isBefore(skipBefore)) continue;
+             maxIterations -= 1;
+ 
+             try {

@@ -87,6 +87,16 @@ Optional env for the defaults that upstream bakes in at build time (`NEXT_PUBLIC
 
 Unset = upstream value. Values must not contain `"` (they end up inside JS strings). The sender name of organizer e-mails is the runtime env `EMAIL_FROM_NAME`; attendee e-mails use the organizer's name. The e-mail logo is the static file `apps/web/public/emails/logo.png` (shown at 89×19 px), replace it with a bind mount, e.g. a 356×76 PNG.
 
+### 0006-caldav-recurring-from-dtstart
+
+Fixes recurring CalDAV events (e.g. SOGo, which ignores `expand` and returns the series master) in the busy-time check. Upstream starts the recurrence iterator at the query start day with the event's time; ical.js takes that as the series DTSTART, so:
+
+- every series gets an extra occurrence on the first day of the queried range. The booking check queries the booking day itself, so a slot shown as free fails with "No available users found" when the phantom occurrence (plus buffers) overlaps it;
+- weekly series without `BYDAY` move to the weekday the query starts on, so the real occurrences don't block anything;
+- `COUNT` restarts at the query day, so ended series keep blocking time.
+
+The patch iterates from the event's own DTSTART and skips occurrences before the range without counting them against the 365-iteration limit.
+
 ## Runtime notes
 
 - The public URL is not baked in: `scripts/start.sh` replaces the build URL with `NEXT_PUBLIC_WEBAPP_URL` on every start.
