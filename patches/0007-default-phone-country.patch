@@ -1,0 +1,27 @@
+diff --git a/packages/trpc/server/routers/publicViewer/countryCode.handler.ts b/packages/trpc/server/routers/publicViewer/countryCode.handler.ts
+index ed67a3d..58cddb5 100644
+--- a/packages/trpc/server/routers/publicViewer/countryCode.handler.ts
++++ b/packages/trpc/server/routers/publicViewer/countryCode.handler.ts
+@@ -7,7 +7,9 @@ type CountryCodeOptions = {
+ export const countryCodeHandler = async ({ ctx }: CountryCodeOptions) => {
+   const { req } = ctx;
+ 
+-  const countryCode: string | string[] = req?.headers?.["x-vercel-ip-country"] ?? "";
++  // Self-hosted there is no Vercel geo header; DEFAULT_PHONE_COUNTRY (e.g. DE) sets the phone field's country
++  const countryCode: string | string[] =
++    req?.headers?.["x-vercel-ip-country"] || process.env.DEFAULT_PHONE_COUNTRY || "";
+   return { countryCode: Array.isArray(countryCode) ? countryCode[0] : countryCode };
+ };
+ 
+diff --git a/turbo.json b/turbo.json
+index 54d0b0a..9adedb8 100644
+--- a/turbo.json
++++ b/turbo.json
+@@ -48,6 +48,7 @@
+     "DATABASE_DIRECT_URL",
+     "DATABASE_URL",
+     "DEBUG",
++    "DEFAULT_PHONE_COUNTRY",
+     "DUB_API_KEY",
+     "NEXT_PUBLIC_DUB_PROGRAM_ID",
+     "NEXT_PUBLIC_VERCEL_USE_BOTID_IN_BOOKER",

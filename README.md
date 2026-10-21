@@ -97,6 +97,10 @@ Fixes recurring CalDAV events (e.g. SOGo, which ignores `expand` and returns the
 
 The patch iterates from the event's own DTSTART and skips occurrences before the range without counting them against the 365-iteration limit.
 
+### 0007-default-phone-country
+
+Phone fields (booking form, SMS/phone locations) preselect the country from the Vercel geo header `x-vercel-ip-country`. Self-hosted that header is missing and the fields always start with `+1`. Optional env `DEFAULT_PHONE_COUNTRY` (ISO 3166 code, e.g. `DE`) is used when the header is absent. A full international number typed by the visitor still selects its own country. Unset = upstream behaviour. The patch adds the variable to `globalEnv` in `turbo.json`.
+
 ## Runtime notes
 
 - The public URL is not baked in: `scripts/start.sh` replaces the build URL with `NEXT_PUBLIC_WEBAPP_URL` on every start.
