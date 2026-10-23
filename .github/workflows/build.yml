@@ -92,6 +92,14 @@ jobs:
             echo "Applying $p"
             git -C upstream apply --verbose "../$p"
           done
+          # Node 20 is EOL and gets no fix for CVE-2026-111497 (Brotli RCE). Raise node:20 base images
+          # to node:22 as long as upstream still uses them; no-op once upstream has moved on.
+          for f in upstream/Dockerfile upstream/apps/api/v2/Dockerfile; do
+            if grep -qE '^FROM .*node:20(-|[[:space:]]|$)' "$f"; then
+              sed -i -E '/^FROM /s/node:20(-|[[:space:]]|$)/node:22\1/' "$f"
+              echo "$f: node:20 -> node:22"; grep -n '^FROM' "$f"
+            fi
+          done
 
       - name: Build
         if: steps.check.outputs.skip == 'false'
@@ -190,6 +198,14 @@ jobs:
             [ -e "$p" ] || continue
             echo "Applying $p"
             git -C upstream apply --verbose "../$p"
+          done
+          # Node 20 is EOL and gets no fix for CVE-2026-111497 (Brotli RCE). Raise node:20 base images
+          # to node:22 as long as upstream still uses them; no-op once upstream has moved on.
+          for f in upstream/Dockerfile upstream/apps/api/v2/Dockerfile; do
+            if grep -qE '^FROM .*node:20(-|[[:space:]]|$)' "$f"; then
+              sed -i -E '/^FROM /s/node:20(-|[[:space:]]|$)/node:22\1/' "$f"
+              echo "$f: node:20 -> node:22"; grep -n '^FROM' "$f"
+            fi
           done
 
       - name: Build
