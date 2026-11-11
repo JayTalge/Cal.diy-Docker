@@ -63,8 +63,17 @@ jobs:
           TAG: ${{ steps.ref.outputs.tag }}
           FORCE: ${{ inputs.force || github.event_name == 'push' }}
         run: |
+          # Also rebuild an existing tag when the official node:<major> image has a newer patch
+          # release than the one baked in (e.g. Node security releases between upstream commits).
+          node_env() { docker buildx imagetools inspect "$1" --format '{{json .Image}}' | jq -r '(if has("linux/amd64") then .["linux/amd64"] else . end).config.Env[]? | select(startswith("NODE_VERSION=")) | sub("NODE_VERSION=";"")'; }
           if [ "$FORCE" != "true" ] && docker manifest inspect "$IMAGE:$TAG" >/dev/null 2>&1; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"; echo "$TAG already built"
+            BUILT=$(node_env "$IMAGE:$TAG" || true)
+            LATEST=$([ -n "$BUILT" ] && node_env "node:${BUILT%%.*}" || true)
+            if [ -n "$BUILT" ] && [ -n "$LATEST" ] && [ "$BUILT" != "$LATEST" ]; then
+              echo "skip=false" >> "$GITHUB_OUTPUT"; echo "$TAG has Node $BUILT, node:${BUILT%%.*} is $LATEST - rebuilding"
+            else
+              echo "skip=true" >> "$GITHUB_OUTPUT"; echo "$TAG already built (Node $BUILT)"
+            fi
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
@@ -173,8 +182,17 @@ jobs:
         env:
           FORCE: ${{ needs.build.outputs.force }}
         run: |
+          # Also rebuild an existing tag when the official node:<major> image has a newer patch
+          # release than the one baked in (e.g. Node security releases between upstream commits).
+          node_env() { docker buildx imagetools inspect "$1" --format '{{json .Image}}' | jq -r '(if has("linux/amd64") then .["linux/amd64"] else . end).config.Env[]? | select(startswith("NODE_VERSION=")) | sub("NODE_VERSION=";"")'; }
           if [ "$FORCE" != "true" ] && docker manifest inspect "$API_IMAGE:$TAG" >/dev/null 2>&1; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"; echo "$TAG already built"
+            BUILT=$(node_env "$API_IMAGE:$TAG" || true)
+            LATEST=$([ -n "$BUILT" ] && node_env "node:${BUILT%%.*}" || true)
+            if [ -n "$BUILT" ] && [ -n "$LATEST" ] && [ "$BUILT" != "$LATEST" ]; then
+              echo "skip=false" >> "$GITHUB_OUTPUT"; echo "$TAG has Node $BUILT, node:${BUILT%%.*} is $LATEST - rebuilding"
+            else
+              echo "skip=true" >> "$GITHUB_OUTPUT"; echo "$TAG already built (Node $BUILT)"
+            fi
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
