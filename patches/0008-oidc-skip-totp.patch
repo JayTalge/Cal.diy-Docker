@@ -1,0 +1,92 @@
+diff --git a/packages/features/auth/lib/next-auth-options.ts b/packages/features/auth/lib/next-auth-options.ts
+index aabf09a..b0eaeb6 100644
+--- a/packages/features/auth/lib/next-auth-options.ts
++++ b/packages/features/auth/lib/next-auth-options.ts
+@@ -367,6 +367,12 @@ const OIDC_ADMIN_GROUPS = (process.env.OIDC_ADMIN_GROUPS || "")
+   .map((group) => group.trim())
+   .filter(Boolean);
+ // Settings for users created by an OIDC login (cal defaults are Europe/London, Sunday, 12h)
++// OIDC_SKIP_TOTP=true: logins through the OIDC provider skip cal's own TOTP step, because the IdP
++// already enforced MFA. Password logins of the same users keep asking for the TOTP code.
++const OIDC_SKIP_TOTP = process.env.OIDC_SKIP_TOTP === "true";
++const skipTotpForOidc = (account: { provider?: string } | null | undefined) =>
++  OIDC_SKIP_TOTP && account?.provider === "oidc";
++
+ const OIDC_NEW_USER_DEFAULTS = {
+   ...(process.env.OIDC_DEFAULT_TIMEZONE && { timeZone: process.env.OIDC_DEFAULT_TIMEZONE }),
+   ...(process.env.OIDC_DEFAULT_LOCALE && { locale: process.env.OIDC_DEFAULT_LOCALE }),
+@@ -1046,7 +1052,7 @@ export const getOptions = ({
+                 log.error("Error while linking account of already existing user", safeStringify(error));
+               }
+             }
+-            if (existingUser.twoFactorEnabled && existingUser.identityProvider === idP) {
++            if (existingUser.twoFactorEnabled && existingUser.identityProvider === idP && !skipTotpForOidc(account)) {
+               return loginWithTotp(existingUser.email);
+             } else {
+               return true;
+@@ -1062,7 +1068,7 @@ export const getOptions = ({
+ 
+           if (!userWithNewEmail) {
+             await prisma.user.update({ where: { id: existingUser.id }, data: { email: user.email } });
+-            if (existingUser.twoFactorEnabled) {
++            if (existingUser.twoFactorEnabled && !skipTotpForOidc(account)) {
+               return loginWithTotp(existingUser.email);
+             } else {
+               return true;
+@@ -1095,7 +1101,7 @@ export const getOptions = ({
+         if (existingUserWithEmail) {
+           // if self-hosted then we can allow auto-merge of identity providers if email is verified
+           if (isVerified && existingUserWithEmail.identityProvider !== IdentityProvider.CAL) {
+-            if (existingUserWithEmail.twoFactorEnabled) {
++            if (existingUserWithEmail.twoFactorEnabled && !skipTotpForOidc(account)) {
+               return loginWithTotp(existingUserWithEmail.email);
+             } else {
+               return true;
+@@ -1125,7 +1131,7 @@ export const getOptions = ({
+               },
+             });
+ 
+-            if (existingUserWithEmail.twoFactorEnabled) {
++            if (existingUserWithEmail.twoFactorEnabled && !skipTotpForOidc(account)) {
+               return loginWithTotp(existingUserWithEmail.email);
+             } else {
+               return true;
+@@ -1153,7 +1159,7 @@ export const getOptions = ({
+               },
+             });
+ 
+-            if (existingUserWithEmail.twoFactorEnabled) {
++            if (existingUserWithEmail.twoFactorEnabled && !skipTotpForOidc(account)) {
+               return loginWithTotp(existingUserWithEmail.email);
+             } else {
+               return true;
+@@ -1174,7 +1180,7 @@ export const getOptions = ({
+               },
+             });
+ 
+-            if (existingUserWithEmail.twoFactorEnabled) {
++            if (existingUserWithEmail.twoFactorEnabled && !skipTotpForOidc(account)) {
+               return loginWithTotp(existingUserWithEmail.email);
+             } else {
+               return true;
+@@ -1192,7 +1198,7 @@ export const getOptions = ({
+               },
+             });
+ 
+-            if (existingUserWithEmail.twoFactorEnabled) {
++            if (existingUserWithEmail.twoFactorEnabled && !skipTotpForOidc(account)) {
+               return loginWithTotp(existingUserWithEmail.email);
+             } else {
+               return true;
+diff --git a/turbo.json b/turbo.json
+index f313388..849ff3f 100644
+--- a/turbo.json
++++ b/turbo.json
+@@ -92,6 +92,7 @@
+     "OIDC_LOGIN_ENABLED",
+     "OIDC_NAME",
+     "OIDC_SCOPES",
++    "OIDC_SKIP_TOTP",
+     "OIDC_TRUST_EMAIL",
+     "GOOGLE_WEBHOOK_TOKEN",
+     "GOOGLE_WEBHOOK_URL",

@@ -55,6 +55,7 @@ Adds a generic OpenID Connect login (cal.diy itself only has Google and Azure AD
 | `OIDC_TRUST_EMAIL=true` | treat the IdP e-mail as verified even without `email_verified` (only if users cannot change their e-mail in the IdP) |
 | `OIDC_ADMIN_GROUPS` | comma-separated group names (claim `groups`); members become cal `ADMIN`, everyone else `USER`, applied on every OIDC login. Empty = roles are not touched. Local password accounts are never changed |
 | `OIDC_DEFAULT_TIMEZONE`, `OIDC_DEFAULT_LOCALE`, `OIDC_DEFAULT_WEEK_START`, `OIDC_DEFAULT_TIME_FORMAT` | settings for users created by an OIDC login, e.g. `Europe/Berlin`, `de`, `Monday`, `24` |
+| `OIDC_SKIP_TOTP=true` | OIDC logins skip cal.diy's own TOTP step (patch 0008), for IdPs that already enforce MFA. Password logins of the same users still ask for the TOTP code. Default: off |
 
 The patch also adds the `OIDC_*` variables to `globalEnv` in `turbo.json`: the container starts the app via `turbo run start`, which only passes declared variables to the Next server.
 
